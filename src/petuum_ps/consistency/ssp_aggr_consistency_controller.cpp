@@ -74,6 +74,7 @@ void SSPAggrConsistencyController::BatchInc(int32_t row_id,
 void SSPAggrConsistencyController::DenseBatchInc(
     int32_t row_id, const void *updates, int32_t index_st,
     int32_t num_updates) {
+  std::cout << "SSPAggrConsistencyController::DenseBatchInc" << std::endl;
   size_t thread_update_count
       = thread_cache_->IndexUpdateAndGetCount(row_id, num_updates);
 

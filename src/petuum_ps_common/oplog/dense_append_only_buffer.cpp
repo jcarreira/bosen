@@ -2,6 +2,8 @@
 #include <string.h>
 #include <glog/logging.h>
 
+#include <cstdio>
+
 namespace petuum {
 
 bool DenseAppendOnlyBuffer::Inc(int32_t row_id, int32_t col_id,
@@ -20,6 +22,7 @@ bool DenseAppendOnlyBuffer::BatchInc(int32_t row_id, const int32_t *col_ids,
 bool DenseAppendOnlyBuffer::DenseBatchInc(int32_t row_id, const void *deltas,
                                           int32_t index_st,
                                           int32_t num_updates) {
+  puts("DenseAppendOnlyBuffer::DenseBatchInc");
   if (size_ + sizeof(int32_t) + update_size_*num_updates > capacity_)
     return false;
 

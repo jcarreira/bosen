@@ -45,6 +45,7 @@ void SSPPushAppendOnlyConsistencyController::BatchInc(int32_t row_id,
 void SSPPushAppendOnlyConsistencyController::DenseBatchInc(
     int32_t row_id, const void *updates,
     int32_t index_st, int32_t num_updates) {
+  std::cout << "SSPPushAppendOnlyConsistencyController::DenseBatchInc" << std::endl;
   STATS_APP_SAMPLE_BATCH_INC_OPLOG_BEGIN();
 
   int32_t channel_idx = oplog_.DenseBatchInc(

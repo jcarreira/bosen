@@ -49,5 +49,7 @@ const int32_t kColIdxLossTableNumEvalTest = 6;  // # test point eval.
 const int32_t kColIdxLossTableTime = 7;
 
 const int32_t kNumColumnsLossTable = 8;
+  
+const int32_t kColIdxLossTableTestEntropyLoss = 9;
 
 }  // namespace mlr

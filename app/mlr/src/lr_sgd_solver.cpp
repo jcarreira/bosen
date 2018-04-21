@@ -12,6 +12,7 @@
 #include <ml/util/fastapprox/fastapprox.hpp>
 #include <utility>
 
+std::ofstream lr_fout("/ebs/joao/lr_sgd_solver_log", std::fstream::out | std::fstream::app);
 
 namespace mlr {
 
@@ -22,6 +23,8 @@ LRSGDSolver::LRSGDSolver(const LRSGDSolverConfig& config) :
   w_cache_old_(config.feature_dim),
   feature_dim_(config.feature_dim),
   w_table_num_cols_(config.w_table_num_cols), lambda_(config.lambda) {
+    lr_fout << "feature_dim: " << feature_dim_ << std::endl;
+    lr_fout << "w_table_num_cols_: " << w_table_num_cols_ << std::endl;
     if (config.sparse_data) {
       // Sparse feature, dense weight.
       FeatureDotProductFun_ = petuum::ml::SparseDenseFeatureDotProduct;
@@ -35,9 +38,15 @@ void LRSGDSolver::MiniBatchSGD(
     const std::vector<petuum::ml::AbstractFeature<float>*>& features,
       const std::vector<int32_t>& labels, const std::vector<int32_t>& idx,
       double lr) {
+  petuum::HighResolutionTimer MiniBatchSGDTimer;
+  lr_fout << "MiniBatchSGD: " << "\n";
+  lr_fout << "lambda: " << lambda_ << "\n";
+  lr_fout << "idx size: " << idx.size() << "\n";
+  lr_fout << "lr: " << lr << "\n";
   if (lambda_ == 0) {
     for (const auto& i : idx) {
       petuum::ml::AbstractFeature<float>& feature = *features[i];
+      //lr_fout << "feature num entries: " << feature.GetNumEntries() << std::endl;
       int32_t label = labels[i];
       CHECK_NE(-1, label) << "class label for binary logistic regression "
         << "should be {0,1}, not {-1,1}";
@@ -50,6 +59,7 @@ void LRSGDSolver::MiniBatchSGD(
     petuum::ml::DenseFeature<float> w_delta(w_cache_.GetFeatureDim());
     for (const auto& i : idx) {
       petuum::ml::AbstractFeature<float>& feature = *features[i];
+      //lr_fout << "feature num entries: " << feature.GetNumEntries() << std::endl;
       int32_t label = labels[i];
       const auto pred = Predict(feature);
 
@@ -64,6 +74,7 @@ void LRSGDSolver::MiniBatchSGD(
         + w_delta_vec[i];
     }
   }
+  lr_fout << std::fixed << "MiniBatchSGD elapsed: " << MiniBatchSGDTimer.elapsed() << "\n";
 }
 
 std::vector<float> LRSGDSolver::Predict(
@@ -91,6 +102,7 @@ float LRSGDSolver::CrossEntropyLoss(const std::vector<float>& prediction, int32_
   }
 
 void LRSGDSolver::RefreshParams() {
+  petuum::HighResolutionTimer refresh_timer;
   std::vector<float> w_delta(feature_dim_);
   std::vector<float>& w_cache_vec = w_cache_.GetVector();
   for (int i = 0; i < feature_dim_; ++i) {
@@ -107,6 +119,7 @@ void LRSGDSolver::RefreshParams() {
     }
     w_table_.DenseBatchInc(i, w_update_batch);
   }
+  auto elapsed1 = refresh_timer.elapsed();
 
   // last incomplete row.
   if (feature_dim_ % w_table_num_cols_ != 0) {
@@ -119,6 +132,7 @@ void LRSGDSolver::RefreshParams() {
     }
     w_table_.DenseBatchInc(num_full_rows, w_update_batch);
   }
+  auto elapsed2 = refresh_timer.elapsed();
 
   // Read w from the PS.
   std::vector<float> w_cache(w_table_num_cols_);
@@ -129,6 +143,7 @@ void LRSGDSolver::RefreshParams() {
     std::copy(w_cache.begin(), w_cache.end(),
               w_cache_vec.begin() + i * w_table_num_cols_);
   }
+  auto elapsed3 = refresh_timer.elapsed();
   if (feature_dim_ % w_table_num_cols_ != 0) {
     // last incomplete row.
     int num_cols_last_row = feature_dim_ - num_full_rows * w_table_num_cols_;
@@ -140,6 +155,17 @@ void LRSGDSolver::RefreshParams() {
         w_cache_vec.begin() + num_full_rows * w_table_num_cols_);
   }
   w_cache_old_ = w_cache_vec;
+  auto elapsed4 = refresh_timer.elapsed();
+
+  static int counter = 0;
+  if (counter++ % 100 == 0) {
+	  lr_fout
+		  << "elapsed1: " << elapsed1
+		  << "elapsed2: " << elapsed2 - elapsed1
+		  << "elapsed3: " << elapsed3 - elapsed2
+		  << "elapsed4: " << elapsed4 - elapsed3
+		  << "\n";
+  }
 }
 
 void LRSGDSolver::SaveWeights(const std::string& filename) const {

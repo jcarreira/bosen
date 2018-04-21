@@ -53,6 +53,9 @@ private:  // functions
   void ComputeTestError(AbstractMLRSGDSolver* mlr_solver,
     petuum::ml::WorkloadManager* test_workload_mgr,
     int32_t num_data_to_use, int32_t ith_eval);
+  double ComputeTestError2(AbstractMLRSGDSolver* mlr_solver,
+    petuum::ml::WorkloadManager* test_workload_mgr,
+    int32_t num_data_to_use, int32_t ith_eval, double time);
 
   // Compute online training error based on the first num_data_to_use. This
   // will reset workload_mgr.

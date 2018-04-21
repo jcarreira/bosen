@@ -71,6 +71,7 @@ int32_t AppendOnlyOpLogPartition::BatchInc(int32_t row_id, const int32_t *column
 int32_t AppendOnlyOpLogPartition::DenseBatchInc(
     int32_t row_id, const void *updates,
     int32_t index_st, int32_t num_updates) {
+  std::cout << "AppendOnlyOpLogPartition::DenseBatchInc" << std::endl;
   if(!append_only_buff_->DenseBatchInc
      (row_id, updates, index_st, num_updates)) {
     FlushOpLog();

@@ -180,6 +180,7 @@ void ThreadTable::BatchInc(int32_t row_id, const int32_t *column_ids,
 
 void ThreadTable::DenseBatchInc(int32_t row_id, const void *updates,
                                 int32_t index_st, int32_t num_updates) {
+  std::cout << "ThreadTable::DenseBatchInc" << std::endl;
   auto oplog_iter = oplog_map_.find(row_id);
   AbstractRowOpLog *row_oplog;
   if (oplog_iter == oplog_map_.end()) {

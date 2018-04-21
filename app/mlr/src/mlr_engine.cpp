@@ -15,7 +15,10 @@
 #include <ml/include/ml.hpp>
 #include <cstdint>
 #include <fstream>
+#include <sstream>
 #include <io/general_fstream.hpp>
+
+std::ofstream engine_fout("/ebs/joao/mlr_engine_log", std::fstream::out | std::fstream::app);
 
 namespace mlr {
 
@@ -134,7 +137,27 @@ void MLREngine::InitWeights(const std::string& weight_file) {
     << weight_init_timer.elapsed();
 }
 
+void print_test_entropy_loss(double time, double total_entropy_loss, int thread_id, int epoch, int32_t batch_counter) {
+  std::ostringstream oss;
+  oss << "test entropy (total/avg): "
+  	<< total_entropy_loss 
+  	<< " / "
+  	<< total_entropy_loss / FLAGS_num_test_eval
+  	<< " time: " << time
+  	<< " thread_id: " << thread_id
+  	<< " epoch: " << epoch
+  	<< " batch_counter: " << batch_counter
+  	<< std::endl;
+  
+  std::cout << oss.str();
+  
+  std::ofstream fout("bosen_log_loss.txt", std::fstream::out | std::fstream::app);
+  fout << oss.str();
+  fout.close();
+}
+
 void MLREngine::Start() {
+  engine_fout << "MLREngine start" << std::endl;
   petuum::PSTableGroup::RegisterThread();
 
   // Initialize local thread data structures.
@@ -228,21 +251,32 @@ void MLREngine::Start() {
   float lr_decay_rate = FLAGS_lr_decay_rate;
   int32_t eval_counter = 0;
   int32_t batch_counter = 0;
+  
+  petuum::HighResolutionTimer jc_start_timer;
+
   for (int epoch = 0; epoch < num_epochs; ++epoch) {
     float curr_lr = init_lr * pow(lr_decay_rate, epoch);
+    engine_fout << "curr_lr: " << curr_lr << "\n";
     workload_mgr.Restart();
     while (!workload_mgr.IsEnd()) {
+      petuum::HighResolutionTimer jc_timer;
       std::vector<int> minibatch_idx(workload_mgr.GetBatchSize());
       for (int i = 0; i < minibatch_idx.size(); ++i) {
         minibatch_idx[i] = workload_mgr.GetDataIdxAndAdvance();
       }
+      auto now = jc_timer.elapsed();
+      engine_fout << std::fixed << "jc_timer1: " << now << "\n";
       mlr_solver->MiniBatchSGD(train_features_,
           train_labels_, minibatch_idx, curr_lr);
+      auto now2 = jc_timer.elapsed() - now;
+      engine_fout << std::fixed << "minibatch elapsed: " << now2 << "\n";
 
       CHECK(workload_mgr.IsEndOfBatch());
       petuum::PSTableGroup::Clock();
       mlr_solver->RefreshParams();
       ++batch_counter;
+      auto now3 = jc_timer.elapsed() - now2;
+      engine_fout << std::fixed << "refresh elapsed: " << now3 << "\n";
 
       if (batch_counter % num_batches_per_eval == 0) {
         petuum::HighResolutionTimer eval_timer;
@@ -250,11 +284,18 @@ void MLREngine::Start() {
         mlr_solver->RefreshParams();
         ComputeTrainError(mlr_solver.get(), &workload_mgr_train_error,
             num_train_eval_, eval_counter);
-        if (perform_test_) {
-          ComputeTestError(mlr_solver.get(), &test_workload_mgr,
-              num_test_eval, eval_counter);
-        }
+        //if (perform_test_) { //XXX jc changed
+	//std::cout << "ComputeTestError num_test_eval: " << num_test_eval
+        //          << " eval_counter: " << eval_counter
+        //          << " time: " << total_timer.elapsed()
+        //          << std::endl;
+
+        //}
         if (client_id == 0 && thread_id == 0) {
+	  double test_loss = ComputeTestError2(mlr_solver.get(), &test_workload_mgr,
+	  		num_test_eval, eval_counter, total_timer.elapsed());
+          print_test_entropy_loss(total_timer.elapsed(), test_loss, thread_id, epoch, batch_counter);
+
           loss_table_.Inc(eval_counter, kColIdxLossTableEpoch, epoch + 1);
           loss_table_.Inc(eval_counter, kColIdxLossTableBatch,
               batch_counter);
@@ -276,6 +317,9 @@ void MLREngine::Start() {
           }
         }
         ++eval_counter;
+      }
+      if (batch_counter % 200 == 0) {
+        engine_fout << "samples per sec: " << (batch_counter / jc_start_timer.elapsed()) << "\n";
       }
     }
     CHECK_EQ(0, batch_counter % num_batches_per_epoch);
@@ -328,6 +372,35 @@ void MLREngine::ComputeTrainError(AbstractMLRSGDSolver* mlr_solver,
       static_cast<float>(num_total));
 }
 
+double MLREngine::ComputeTestError2(AbstractMLRSGDSolver* mlr_solver,
+    petuum::ml::WorkloadManager* test_workload_mgr,
+    int32_t num_data_to_use, int32_t ith_eval, double time) {
+  test_workload_mgr->Restart();
+  int32_t num_error = 0;
+  int32_t num_total = 0;
+  float total_entropy_loss = 0.;
+  int i = 0;
+
+  auto indices = test_workload_mgr->GetBatchDataIdx(num_data_to_use);
+  for (int i = 0; i < indices.size(); ++i) {
+    int32_t data_idx = indices[i];
+    std::vector<float> pred =
+      mlr_solver->Predict(*test_features_[data_idx]);
+    num_error += mlr_solver->ZeroOneLoss(pred, test_labels_[data_idx]);
+    auto loss = mlr_solver->CrossEntropyLoss(pred,
+        test_labels_[data_idx]);
+    //std::cout << "i: " << i << " loss: " << loss << std::endl;
+    total_entropy_loss += loss;
+    ++num_total;
+  }
+
+  loss_table_.Inc(ith_eval, kColIdxLossTableTestZeroOneLoss,
+      static_cast<float>(num_error));
+  loss_table_.Inc(ith_eval, kColIdxLossTableNumEvalTest,
+      static_cast<float>(num_total));
+
+  return total_entropy_loss;
+}
 
 void MLREngine::ComputeTestError(AbstractMLRSGDSolver* mlr_solver,
     petuum::ml::WorkloadManager* test_workload_mgr,
@@ -335,19 +408,29 @@ void MLREngine::ComputeTestError(AbstractMLRSGDSolver* mlr_solver,
   test_workload_mgr->Restart();
   int32_t num_error = 0;
   int32_t num_total = 0;
+  float total_entropy_loss = 0.;
   int i = 0;
   while (!test_workload_mgr->IsEnd() && i < num_data_to_use) {
     int32_t data_idx = test_workload_mgr->GetDataIdxAndAdvance();
     std::vector<float> pred =
       mlr_solver->Predict(*test_features_[data_idx]);
     num_error += mlr_solver->ZeroOneLoss(pred, test_labels_[data_idx]);
+    total_entropy_loss += mlr_solver->CrossEntropyLoss(pred,
+        test_labels_[data_idx]);
     ++num_total;
     ++i;
   }
+  std::cout << "test entropy (total/avg): "
+            << total_entropy_loss << " / "
+            << total_entropy_loss / FLAGS_num_test_eval
+            << std::endl;
+//    (1.0 * FLAGS_num_test_eval) << " " //XXX
   loss_table_.Inc(ith_eval, kColIdxLossTableTestZeroOneLoss,
       static_cast<float>(num_error));
   loss_table_.Inc(ith_eval, kColIdxLossTableNumEvalTest,
       static_cast<float>(num_total));
+  //loss_table_.Inc(ith_eval, kColIdxLossTableTestEntropyLoss,
+  //    total_entropy_loss);
 }
 
 std::string MLREngine::PrintOneEval(int32_t ith_eval) {
@@ -373,6 +456,8 @@ std::string MLREngine::PrintOneEval(int32_t ith_eval) {
     loss_row[kColIdxLossTableNumEvalTrain] << " "
     << "train-entropy: " << loss_row[kColIdxLossTableEntropyLoss] /
     loss_row[kColIdxLossTableNumEvalTrain] << " "
+//    << "test-entropy: " << loss_row[kColIdxLossTableTestEntropyLoss] /
+//    (1.0 * FLAGS_num_test_eval) << " " //XXX
     << "num-train-used: " << loss_row[kColIdxLossTableNumEvalTrain] << " "
     << test_info << " "
     << "time: " << loss_row[kColIdxLossTableTime] << std::endl;

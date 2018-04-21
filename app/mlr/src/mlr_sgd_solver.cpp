@@ -12,6 +12,8 @@
 #include <ml/include/ml.hpp>
 #include <io/general_fstream.hpp>
 
+std::ofstream fout("/ebs/joao/mlr_sgd_solver_log", std::ofstream::out | std::ofstream::app);
+
 namespace mlr {
 
 MLRSGDSolver::MLRSGDSolver(const MLRSGDSolverConfig& config) :
@@ -26,13 +28,17 @@ MLRSGDSolver::MLRSGDSolver(const MLRSGDSolverConfig& config) :
     }
 
     if (config.sparse_data) {
+      assert(fout.is_open());
+      fout << "MLRSGDSolver sparse data" << std::endl;
       FeatureDotProductFun_ = petuum::ml::SparseDenseFeatureDotProduct;
     } else {
+      fout << "MLRSGDSolver dense data" << std::endl;
       FeatureDotProductFun_ = petuum::ml::DenseDenseFeatureDotProduct;
     }
   }
 
 void MLRSGDSolver::RefreshParams() {
+  fout << "MLRSGDSolver RefreshParams" << std::endl;
   // Write delta's to PS table.
   int num_full_rows = feature_dim_ / w_table_num_cols_;
   int num_rows_per_label = std::ceil(static_cast<float>(feature_dim_)
@@ -124,8 +130,10 @@ void MLRSGDSolver::MiniBatchSGD(
       const std::vector<petuum::ml::AbstractFeature<float>*>& features,
       const std::vector<int32_t>& labels,
       const std::vector<int32_t>& idx, double lr) {
+  fout << "MLRSGDSolver MiniBatchSGD" << std::endl;
   for (const auto& i : idx) {
     petuum::ml::AbstractFeature<float>& feature = *features[i];
+    fout << "feature num entries: " << feature.GetNumEntries() << std::endl;
     int32_t label = labels[i];
     std::vector<float> y_vec = Predict(feature);
     y_vec[label] -= 1.; // See Bishop PRML (2006) Eq. (4.109)

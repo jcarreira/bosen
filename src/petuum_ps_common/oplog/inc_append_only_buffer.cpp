@@ -1,5 +1,6 @@
 #include <petuum_ps_common/oplog/inc_append_only_buffer.hpp>
 #include <string.h>
+#include <cstdio>
 
 namespace petuum {
 
@@ -43,6 +44,7 @@ bool IncAppendOnlyBuffer::BatchInc(int32_t row_id, const int32_t *col_ids,
 bool IncAppendOnlyBuffer::DenseBatchInc(int32_t row_id, const void *deltas,
                                         int32_t index_st,
                                         int32_t num_updates) {
+  puts("IncAppendOnlyBuffer::DenseBatchInc");
   if (size_ + (sizeof(int32_t) + sizeof(int32_t) + update_size_)*num_updates
       > capacity_)
     return false;

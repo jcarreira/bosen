@@ -10,6 +10,9 @@
 #include <vector>
 #include <cstdint>
 #include <algorithm>
+#include <fstream>
+
+std::ofstream mlr_main_fout("/ebs/joao/mlr_main_log", std::fstream::out | std::fstream::app);
 
 // Petuum Parameters
 DEFINE_string(hostfile, "", "Path to file containing server ip:port.");
@@ -68,6 +71,7 @@ DEFINE_int32(w_table_num_cols, 1000000,
 const int32_t kDenseRowFloatTypeID = 0;
 
 int main(int argc, char *argv[]) {
+  mlr_main_fout << "MLR MAIN" << std::endl;
   google::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
 
@@ -114,6 +118,11 @@ int main(int argc, char *argv[]) {
   table_config.table_info.table_staleness = FLAGS_staleness;
   table_config.table_info.row_capacity =
     std::min(FLAGS_w_table_num_cols, feature_dim);
+
+  std::cout << "table_config.table_info.row_capacity: "
+            << table_config.table_info.row_capacity
+            << std::endl;
+
   table_config.table_info.dense_row_oplog_capacity =
     table_config.table_info.row_capacity;
   table_config.table_info.row_oplog_type = FLAGS_row_oplog_type;

@@ -223,6 +223,7 @@ void ClientTable::BatchInc(int32_t row_id, const int32_t* column_ids,
 void ClientTable::DenseBatchInc(
     int32_t row_id, const void *updates, int32_t index_st,
     int32_t num_updates) {
+  std::cout << "ClientTable::DenseBatchInc" << std::endl;
   STATS_APP_SAMPLE_BATCH_INC_BEGIN(table_id_);
   consistency_controller_->DenseBatchInc(row_id, updates, index_st,
                                          num_updates);

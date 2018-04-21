@@ -179,6 +179,7 @@ public:
 
   void DenseBatchInc(int32_t row_id,
                      const DenseUpdateBatch<UPDATE> &update_batch) {
+    std::cout << "DenseBatchInc here" << std::endl;
     system_table_->DenseBatchInc(row_id, update_batch.get_mem_const(),
                                  update_batch.get_index_st(),
                                  update_batch.get_num_updates());

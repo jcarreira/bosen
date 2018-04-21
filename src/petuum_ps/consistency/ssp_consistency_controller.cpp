@@ -5,6 +5,9 @@
 #include <petuum_ps_common/util/stats.hpp>
 #include <glog/logging.h>
 #include <algorithm>
+#include <fstream>
+
+std::ofstream ssp_fout("/ebs/joao/ssp_consistency", std::fstream::out | std::fstream::app);
 
 namespace petuum {
 
@@ -123,11 +126,16 @@ void SSPConsistencyController::BatchInc(int32_t row_id,
 void SSPConsistencyController::DenseBatchInc(
     int32_t row_id, const void *updates,
     int32_t index_st, int32_t num_updates) {
+
+  ssp_fout << "SSPConsistencyController::DenseBatchInc" << std::endl;
+  petuum::HighResolutionTimer total_timer;
   STATS_APP_SAMPLE_BATCH_INC_OPLOG_BEGIN();
   thread_cache_->IndexUpdate(row_id);
+  auto elapsed1 = total_timer.elapsed();
 
   OpLogAccessor oplog_accessor;
   bool new_create = oplog_.FindInsertOpLog(row_id, &oplog_accessor);
+  auto elapsed2 = total_timer.elapsed();
 
   if (new_create) {
     oplog_accessor.get_row_oplog()->OverwriteWithDenseUpdate(
@@ -137,16 +145,27 @@ void SSPConsistencyController::DenseBatchInc(
     (this->*DenseBatchIncOpLog_)(&oplog_accessor, deltas_uint8,
                                  index_st, num_updates);
   }
+  auto elapsed3 = total_timer.elapsed();
   STATS_APP_SAMPLE_BATCH_INC_OPLOG_END();
 
   STATS_APP_SAMPLE_BATCH_INC_PROCESS_STORAGE_BEGIN();
   RowAccessor row_accessor;
   ClientRow *client_row = process_storage_.Find(row_id, &row_accessor);
+  auto elapsed4 = total_timer.elapsed();
   if (client_row != 0) {
     client_row->GetRowDataPtr()->ApplyDenseBatchInc(
         updates, index_st, num_updates);
   }
   STATS_APP_SAMPLE_BATCH_INC_PROCESS_STORAGE_END();
+  auto elapsed5 = total_timer.elapsed();
+  ssp_fout << "SSPConsistencyController::DenseBatchInc"
+      << " elapsed1: " << elapsed1
+      << " elapsed2: " << elapsed2 - elapsed1
+      << " elapsed3: " << elapsed3 - elapsed2
+      << " elapsed4: " << elapsed4 - elapsed3
+      << " elapsed5: " << elapsed5 - elapsed4
+      << std::endl;
+       
 }
 
 void SSPConsistencyController::DenseBatchIncDenseOpLog(
